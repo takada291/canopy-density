@@ -1,6 +1,6 @@
 {
-  "name": "直径測定ツール",
-  "short_name": "直径測定",
+  "name": "樹冠疎密ツール",
+  "short_name": "樹冠疎密",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f0f2f5",
@@ -20,4 +20,5 @@
       "purpose": "any"
     }
   ]
+
 }
