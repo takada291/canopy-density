@@ -1,4 +1,4 @@
-const CACHE_NAME = 'Breast-diameter-v1.1.0';
+const CACHE_NAME = 'canopy-density-v0.1.0';
 const urlsToCache = [
   './',
   'index.html',
@@ -38,4 +38,5 @@ self.addEventListener('fetch', (event) => {
   );
 
 });
+
 
