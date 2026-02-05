@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>樹冠疎密度</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2e7d32">
+    
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #000;
+            color: white;
+        }
+
+        /* カメラ映像 */
+        #camera-view {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: cover; z-index: -1;
+        }
+
+        /* 照準 */
+        .crosshair-v {
+            position: fixed; top: 10%; left: 50%; width: 2px; height: 80%;
+            background-color: rgba(255, 255, 0, 0.8);
+            transform: translateX(-50%);
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+        }
+        .crosshair-h {
+            position: fixed; top: 50%; left: 30%; width: 40%; height: 2px;
+            background-color: rgba(255, 255, 0, 0.4);
+            transform: translateY(-50%);
+        }
+
+        /* ダッシュボード (常時表示) */
+        .dashboard {
+            position: absolute; top: 0; left: 0; width: 100%;
+            padding: 15px 10px; box-sizing: border-box;
+            background: rgba(0, 50, 0, 0.85);
+            display: flex; justify-content: space-around; align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+        .dash-item { text-align: center; }
+        .dash-label { font-size: 0.6rem; color: #aaa; display: block; margin-bottom:2px; }
+        .dash-val { font-size: 1.1rem; font-weight: bold; color: #fff; }
+        .dash-main { color: #ffeb3b; font-size: 1.4rem; }
+
+        /* センサー情報 (HUD) */
+        .hud-info {
+            position: absolute; top: 80px; left: 10px;
+            text-align: left; pointer-events: none;
+            text-shadow: 1px 1px 2px black;
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: #00e676;
+            background: rgba(0,0,0,0.3);
+            padding: 5px;
+            border-radius: 5px;
+        }
+
+        /* 操作エリア */
+        .ui-container {
+            position: absolute; bottom: 0; left: 0; width: 100%;
+            padding: 20px; box-sizing: border-box;
+            background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%);
+            text-align: center;
+        }
+
+        /* 入力エリア */
+        .input-area {
+            background: rgba(255, 255, 255, 0.9);
+            color: #333; padding: 10px; border-radius: 12px;
+            margin-bottom: 10px; display: inline-flex; align-items: center; gap: 10px;
+        }
+        input[type="number"] {
+            font-size: 1.2rem; padding: 5px; width: 70px; text-align: center;
+            border: 1px solid #ccc; border-radius: 5px;
+        }
+
+        /* ボタン */
+        button {
+            width: 100%; padding: 15px; font-size: 1.1rem; font-weight: bold;
+            border: none; border-radius: 50px; cursor: pointer; color: white;
+            margin-bottom: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        button:active { transform: scale(0.96); }
+        
+        #btn-action { background-color: #007bff; }
+        #btn-save { background-color: #28a745; display: none; }
+        #btn-reset-all { background-color: #dc3545; font-size: 0.8rem; padding: 8px; width: auto; margin-top:10px; opacity: 0.7; }
+
+        /* 結果トースト */
+        .toast {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.85); color: #fff; padding: 20px;
+            border-radius: 10px; text-align: center; display: none; z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+    <video id="camera-view" autoplay playsinline muted></video>
+    <div class="crosshair-v"></div>
+    <div class="crosshair-h"></div>
+
+    <div class="hud-info" id="hud-display" style="display:none;">
+        仰角: <span id="hud-pitch">0</span>°<br>
+        傾き: <span id="hud-roll">0</span>°
+    </div>
+
+    <div class="dashboard" id="dashboard" style="display:none;">
+        <div class="dash-item">
+            <span class="dash-label">本数</span>
+            <span class="dash-val" id="disp-count">0</span>
+        </div>
+        <div class="dash-item">
+            <span class="dash-label">平均半径</span>
+            <span class="dash-val"><span id="disp-avg-r">0.0</span>m</span>
+        </div>
+        <div class="dash-item">
+            <span class="dash-label">疎密度</span>
+            <span class="dash-val dash-main"><span id="disp-density">0.0</span>%</span>
+        </div>
+    </div>
+
+    <div id="start-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:999; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; padding:20px; box-sizing:border-box;">
+        <h1>樹冠疎密度 v1.1</h1>
+        <p style="color:#ccc; margin-bottom:30px; font-size:0.9rem;">
+            100㎡プロット内の立木を連続測定し<br>疎密度を自動計算します。<br>
+            <small>※樹冠の左端・右端を測定します</small>
+        </p>
+        <button onclick="startApp()" style="background:#28a745; width:80%;">測定スタート</button>
+        <p id="debug-log" style="font-size:0.7rem; color:red; margin-top:10px;"></p>
+    </div>
+
+    <div class="ui-container" id="main-ui" style="display:none;">
+        
+        <div id="current-val-box" style="margin-bottom:10px; color:#ffeb3b; font-weight:bold; display:none;">
+            今回半径: <span id="current-r">0.00</span> m
+        </div>
+
+        <div class="input-area" id="input-box">
+            <label style="font-size:0.9rem;">立木までの水平距離:</label>
+            <input type="number" id="dist-input" value="10" step="0.5"> m
+        </div>
+
+        <button id="btn-action" onclick="handleAction()">① 樹冠の左端</button>
+        <button id="btn-save" onclick="saveMeasurement()">このデータを保存</button>
+        
+        <div style="text-align:right;">
+             <button id="btn-reset-all" onclick="resetAll()">全データクリア</button>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">保存しました</div>
+
+    <script>
+        // 設定
+        let currentAlpha = 0;
+        let leftAngle = null;
+        let rightAngle = null;
+        let step = 0; 
+        
+        // 蓄積データ
+        let measurements = [];
+
+        async function startApp() {
+            const debugLog = document.getElementById('debug-log');
+            debugLog.textContent = "起動処理中...";
+
+            try {
+                // 1. センサー許可 (iOS)
+                if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission !== 'granted') {
+                        alert("センサーが拒否されました"); return;
+                    }
+                }
+
+                // 2. カメラ起動
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                document.getElementById('camera-view').srcObject = stream;
+
+                // 3. センサー開始
+                window.addEventListener('deviceorientation', handleOrientation);
+
+                // UI表示
+                document.getElementById('start-overlay').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'flex';
+                document.getElementById('hud-display').style.display = 'block';
+                document.getElementById('main-ui').style.display = 'block';
+                
+                updateDashboard();
+
+            } catch (err) {
+                console.error(err);
+                debugLog.textContent = "Error: " + err.message;
+                alert("起動エラー: " + err.message);
+            }
+        }
+
+        function handleOrientation(event) {
+            // 方位角 (Alpha)
+            let alpha = event.alpha; 
+            if (event.webkitCompassHeading) alpha = event.webkitCompassHeading;
+            if (alpha !== null) currentAlpha = alpha;
+
+            // 仰角 (Beta: -180 ~ 180, 水平=0, 起き上がり=90)
+            // 傾き (Gamma: -90 ~ 90, 左右)
+            let pitch = event.beta; 
+            let roll = event.gamma;
+
+            if (pitch !== null && roll !== null) {
+                // 見やすいように調整
+                // Android/iOSで基準が違う場合があるが、概ね beta=90-elevation などの変換が必要なケースも。
+                // 一般的なWeb標準では、スマホを立てて垂直=90, 水平=0。
+                // 今回は「仰角(見上げ)」を知りたい。
+                // 垂直持ちの場合: Beta≒90度。見上げるとBetaは小さくなる(または大きくなる)。
+                // 簡易表示として生の値を出して、ユーザーに感覚を掴んでもらいます。
+                
+                // 表示更新
+                document.getElementById('hud-pitch').textContent = pitch.toFixed(0);
+                document.getElementById('hud-roll').textContent = roll.toFixed(0);
+                
+                // 傾き警告 (左右に傾きすぎるとコンパスが狂いやすい)
+                const hudInfo = document.getElementById('hud-display');
+                if (Math.abs(roll) > 20) {
+                    hudInfo.style.color = "red";
+                } else {
+                    hudInfo.style.color = "#00e676";
+                }
+            }
+        }
+
+        function handleAction() {
+            if (step === 0) {
+                leftAngle = currentAlpha;
+                step = 1;
+                const btn = document.getElementById('btn-action');
+                btn.textContent = "② 樹冠の右端";
+                btn.style.backgroundColor = "#e67e22";
+                document.getElementById('input-box').style.display = 'none';
+            } else if (step === 1) {
+                rightAngle = currentAlpha;
+                const r = calcCurrentRadius();
+                
+                document.getElementById('current-r').textContent = r.toFixed(2);
+                document.getElementById('current-val-box').style.display = 'block';
+                
+                document.getElementById('btn-action').style.display = 'none';
+                document.getElementById('btn-save').style.display = 'block';
+                step = 2;
+            }
+        }
+
+        function calcCurrentRadius() {
+            const distM = parseFloat(document.getElementById('dist-input').value);
+            let diff = Math.abs(rightAngle - leftAngle);
+            if (diff > 180) diff = 360 - diff;
+            
+            // 水平距離と水平角(コンパス)を使う限り、出てくるのは「水平半径(投影半径)」です。
+            // なので補正計算は不要です。
+            const thetaRad = diff * (Math.PI / 180);
+            const diameter = 2 * distM * Math.sin(thetaRad / 2);
+            
+            return diameter / 2;
+        }
+
+        function saveMeasurement() {
+            const r = calcCurrentRadius();
+            measurements.push(r);
+            updateDashboard();
+
+            const toast = document.getElementById('toast');
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 1500);
+
+            resetStep();
+        }
+
+        function updateDashboard() {
+            const count = measurements.length;
+            document.getElementById('disp-count').textContent = count;
+
+            if (count === 0) {
+                document.getElementById('disp-avg-r').textContent = "0.0";
+                document.getElementById('disp-density').textContent = "0.0";
+                return;
+            }
+
+            let sumR = 0;
+            measurements.forEach(val => sumR += val);
+            const avgR = sumR / count;
+
+            // 疎密度計算: (π * avgR^2 * count) / 100
+            const density = (Math.PI * Math.pow(avgR, 2) * count) / 100;
+            const densityPercent = density * 100;
+
+            document.getElementById('disp-avg-r').textContent = avgR.toFixed(2);
+            document.getElementById('disp-density').textContent = densityPercent.toFixed(1);
+        }
+
+        function resetStep() {
+            step = 0;
+            leftAngle = null; rightAngle = null;
+            document.getElementById('btn-save').style.display = 'none';
+            document.getElementById('current-val-box').style.display = 'none';
+            
+            const btn = document.getElementById('btn-action');
+            btn.textContent = "① 樹冠の左端";
+            btn.style.backgroundColor = "#007bff";
+            btn.style.display = 'block';
+            document.getElementById('input-box').style.display = 'inline-flex';
+        }
+
+        function resetAll() {
+            if(!confirm("測定データを全て消去しますか？")) return;
+            measurements = [];
+            updateDashboard();
+            resetStep();
+        }
+        
+        // PWA登録
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js');
+            });
+        }
+    </script>
+</body>
+</html>
