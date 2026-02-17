@@ -9,11 +9,9 @@
     
     <style>
         body {
-            margin: 0;
-            overflow: hidden;
+            margin: 0; overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: #000;
-            color: white;
+            background-color: #000; color: white;
         }
 
         /* カメラ映像 */
@@ -28,14 +26,16 @@
             background-color: rgba(255, 255, 0, 0.8);
             transform: translateX(-50%);
             box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+            pointer-events: none;
         }
         .crosshair-h {
             position: fixed; top: 50%; left: 30%; width: 40%; height: 2px;
             background-color: rgba(255, 255, 0, 0.4);
             transform: translateY(-50%);
+            pointer-events: none;
         }
 
-        /* ダッシュボード (測定中の情報) */
+        /* ダッシュボード */
         .dashboard {
             position: absolute; top: 0; left: 0; width: 100%;
             padding: 15px 10px; box-sizing: border-box;
@@ -48,26 +48,22 @@
         .dash-label { font-size: 0.6rem; color: #aaa; display: block; margin-bottom:2px; }
         .dash-val { font-size: 1.1rem; font-weight: bold; color: #fff; }
         
-        /* センサー情報 (HUD) */
+        /* HUD */
         .hud-info {
             position: absolute; top: 80px; left: 10px;
             text-align: left; pointer-events: none;
             text-shadow: 1px 1px 2px black;
-            font-family: monospace;
-            font-size: 0.9rem;
-            color: #00e676;
-            background: rgba(0,0,0,0.3);
-            padding: 5px;
-            border-radius: 5px;
+            font-family: monospace; font-size: 0.9rem;
+            color: #00e676; background: rgba(0,0,0,0.3);
+            padding: 5px; border-radius: 5px;
         }
 
-        /* UIコンテナ共通 */
+        /* UIコンテナ */
         .ui-container {
             position: absolute; bottom: 0; left: 0; width: 100%;
             padding: 20px; box-sizing: border-box;
             background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%);
-            text-align: center;
-            display: none; /* JSで制御 */
+            text-align: center; display: none;
         }
 
         /* 入力エリア */
@@ -86,20 +82,19 @@
             width: 100%; padding: 15px; font-size: 1.1rem; font-weight: bold;
             border: none; border-radius: 50px; cursor: pointer; color: white;
             margin-bottom: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            touch-action: manipulation; /* 連打防止 */
         }
         button:active { transform: scale(0.96); }
         
         .btn-blue { background-color: #007bff; }
         .btn-orange { background-color: #e67e22; }
         .btn-green { background-color: #28a745; }
-        .btn-red { background-color: #dc3545; }
         .btn-gray { background-color: #6c757d; }
 
-        /* 結果表示画面のスタイル */
+        /* 結果表示 */
         .result-panel {
             background: white; color: #333;
-            padding: 20px; border-radius: 15px;
-            margin-bottom: 20px;
+            padding: 20px; border-radius: 15px; margin-bottom: 20px;
             text-align: center;
         }
         .result-main { font-size: 3rem; font-weight: bold; color: #28a745; margin: 10px 0; }
@@ -110,6 +105,7 @@
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: rgba(0,0,0,0.85); color: #fff; padding: 20px;
             border-radius: 10px; text-align: center; display: none; z-index: 100;
+            pointer-events: none; /* クリック透過 */
         }
     </style>
 </head>
@@ -136,10 +132,10 @@
     </div>
 
     <div id="start-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:999; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; padding:20px; box-sizing:border-box;">
-        <h1>樹冠疎密 v2.0</h1>
+        <h1>樹冠疎密 v2.1</h1>
         <p style="color:#ccc; margin-bottom:30px; font-size:0.9rem;">
-            プロット内の数本で樹冠幅を測定し、<br>
-            プロット内本数を掛け疎密度を計算
+            代表木の樹冠幅を測定し<br>
+            全本数を掛けて疎密度を計算します。
         </p>
         <button onclick="startApp()" class="btn-green" style="width:80%;">測定スタート</button>
         <p id="debug-log" style="font-size:0.7rem; color:red; margin-top:10px;"></p>
@@ -195,27 +191,24 @@
     <div class="toast" id="toast">記録しました</div>
 
     <script>
-        // 変数
+        // 設定
         let currentAlpha = 0;
         let leftAngle = null;
         let rightAngle = null;
         let step = 0; 
-        
-        // データ
         let measurements = []; // 半径(m)のリスト
 
-        // --- 起動処理 ---
+        // --- 起動 ---
         async function startApp() {
             try {
                 if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                     const permission = await DeviceOrientationEvent.requestPermission();
-                    if (permission !== 'granted') { alert("センサー不可"); return; }
+                    if (permission !== 'granted') { alert("センサー許可が必要です"); return; }
                 }
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
                 document.getElementById('camera-view').srcObject = stream;
                 window.addEventListener('deviceorientation', handleOrientation);
 
-                // UI初期化
                 document.getElementById('start-overlay').style.display = 'none';
                 document.getElementById('hud-display').style.display = 'block';
                 document.getElementById('dashboard').style.display = 'flex';
@@ -226,7 +219,6 @@
             }
         }
 
-        // --- センサー処理 ---
         function handleOrientation(event) {
             let alpha = event.alpha; 
             if (event.webkitCompassHeading) alpha = event.webkitCompassHeading;
@@ -235,53 +227,72 @@
             if (event.beta !== null) {
                 document.getElementById('hud-pitch').textContent = event.beta.toFixed(0);
                 document.getElementById('hud-roll').textContent = event.gamma.toFixed(0);
-                // 傾き警告
                 document.getElementById('hud-display').style.color = Math.abs(event.gamma) > 20 ? "red" : "#00e676";
             }
         }
 
-        // --- 測定ロジック ---
+        // --- 測定 ---
         function handleAction() {
-            if (step === 0) {
-                leftAngle = currentAlpha;
-                step = 1;
-                const btn = document.getElementById('btn-action');
-                btn.textContent = "② 樹冠の右端";
-                btn.className = "btn-orange";
-                document.getElementById('input-box-dist').style.display = 'none';
-            } else if (step === 1) {
-                rightAngle = currentAlpha;
-                const r = calcCurrentRadius();
-                document.getElementById('current-r').textContent = r.toFixed(2);
-                document.getElementById('current-val-box').style.display = 'block';
-                
-                document.getElementById('btn-action').style.display = 'none';
-                document.getElementById('btn-save').style.display = 'block';
-                step = 2;
+            try {
+                if (step === 0) {
+                    leftAngle = currentAlpha;
+                    step = 1;
+                    const btn = document.getElementById('btn-action');
+                    btn.textContent = "② 樹冠の右端";
+                    btn.className = "btn-orange";
+                    document.getElementById('input-box-dist').style.display = 'none';
+                } else if (step === 1) {
+                    rightAngle = currentAlpha;
+                    const r = calcCurrentRadius();
+                    document.getElementById('current-r').textContent = r.toFixed(2);
+                    document.getElementById('current-val-box').style.display = 'block';
+                    
+                    document.getElementById('btn-action').style.display = 'none';
+                    document.getElementById('btn-save').style.display = 'block';
+                    step = 2;
+                }
+            } catch(e) {
+                alert("エラー: " + e.message);
+                resetLocalStep(); // エラー時はリセット
             }
         }
 
         function calcCurrentRadius() {
-            const distM = parseFloat(document.getElementById('dist-input').value);
+            const distVal = document.getElementById('dist-input').value;
+            const distM = parseFloat(distVal);
+            if(isNaN(distM)) return 0;
+
             let diff = Math.abs(rightAngle - leftAngle);
             if (diff > 180) diff = 360 - diff;
             const thetaRad = diff * (Math.PI / 180);
             const diameter = 2 * distM * Math.sin(thetaRad / 2);
-            return diameter / 2; // 半径を返す
+            return diameter / 2; 
         }
 
         function saveMeasurement() {
-            const r = calcCurrentRadius();
-            measurements.push(r);
-            updateDashboard();
+            try {
+                const r = calcCurrentRadius();
+                measurements.push(r);
+                updateDashboard();
 
-            // トースト
-            const toast = document.getElementById('toast');
-            toast.style.display = 'block';
-            setTimeout(() => { toast.style.display = 'none'; }, 1000);
+                // トースト表示
+                const toast = document.getElementById('toast');
+                toast.style.display = 'block';
+                setTimeout(() => { toast.style.display = 'none'; }, 1000);
 
-            // リセットして次へ
+                // 次の測定へリセット
+                resetLocalStep();
+            } catch(e) {
+                alert("保存エラー: " + e.message);
+                resetLocalStep();
+            }
+        }
+
+        function resetLocalStep() {
             step = 0;
+            leftAngle = null; 
+            rightAngle = null;
+            
             document.getElementById('btn-save').style.display = 'none';
             document.getElementById('current-val-box').style.display = 'none';
             
@@ -305,7 +316,7 @@
             }
         }
 
-        // --- 画面遷移ロジック ---
+        // --- 画面遷移 ---
         function showPhase(phase) {
             document.getElementById('ui-measure').style.display = 'none';
             document.getElementById('ui-input').style.display = 'none';
@@ -316,17 +327,16 @@
                 document.getElementById('dashboard').style.display = 'flex';
             } else if (phase === 'input') {
                 document.getElementById('ui-input').style.display = 'block';
-                document.getElementById('dashboard').style.display = 'flex'; // ダッシュボードは残す
+                document.getElementById('dashboard').style.display = 'flex';
             } else if (phase === 'result') {
                 document.getElementById('ui-result').style.display = 'block';
-                document.getElementById('dashboard').style.display = 'none'; // 結果画面では消す
+                document.getElementById('dashboard').style.display = 'none';
             }
         }
 
         function goToInputPhase() {
             if (measurements.length === 0) {
-                alert("少なくとも1本は樹冠幅を測定してください");
-                return;
+                alert("少なくとも1本は測定してください"); return;
             }
             showPhase('input');
         }
@@ -335,29 +345,23 @@
             showPhase('measure');
         }
 
-        // --- 最終計算 ---
+        // --- 計算 ---
         function calcResult() {
             const totalTrees = parseFloat(document.getElementById('total-trees-input').value);
             if (isNaN(totalTrees) || totalTrees <= 0) {
-                alert("本数を正しく入力してください");
-                return;
+                alert("本数を入力してください"); return;
             }
 
-            // 平均半径の算出
             let sumR = 0;
             measurements.forEach(v => sumR += v);
             const avgR = sumR / measurements.length;
 
-            // 計算式: (3.141 * (樹冠幅の平均値/2)^2 * 本数) / 100
-            // ※ avgR はすでに「樹冠幅/2」の値
-            // ※ 3.141 を明示的に指定
+            // (3.141 * 平均半径^2 * 本数) / 100
             const oneTreeArea = 3.141 * Math.pow(avgR, 2);
             const totalArea = oneTreeArea * totalTrees;
-            const density = totalArea / 100 * 100; // /100m2 * 100%
+            const density = totalArea; // /100m2 * 100% なので値は同じ
 
-            // 表示
             document.getElementById('res-density').textContent = density.toFixed(1);
-            
             document.getElementById('res-avg').textContent = avgR.toFixed(2);
             document.getElementById('res-area').textContent = oneTreeArea.toFixed(2);
             document.getElementById('res-count').textContent = totalTrees;
@@ -367,22 +371,13 @@
         }
 
         function resetAll() {
-            if(!confirm("測定データをリセットして最初に戻りますか？")) return;
+            if(!confirm("データをリセットして最初に戻りますか？")) return;
             measurements = [];
             updateDashboard();
-            step = 0;
-            document.getElementById('btn-save').style.display = 'none';
-            document.getElementById('current-val-box').style.display = 'none';
-            const btn = document.getElementById('btn-action');
-            btn.textContent = "① 樹冠の左端";
-            btn.className = "btn-blue";
-            btn.style.display = 'block';
-            document.getElementById('input-box-dist').style.display = 'inline-flex';
-
+            resetLocalStep();
             showPhase('measure');
         }
         
-        // PWA
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
         }
